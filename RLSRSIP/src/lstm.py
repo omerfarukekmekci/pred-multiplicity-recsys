@@ -14,6 +14,7 @@ import math, random
 from collections import defaultdict
 import rbo
 import time
+from util import frbo
 
 class LSTM(nn.Module):
     def __init__(self, data, input_size, output_size, hidden_dim, args, n_layers=1, device="cpu"):
@@ -113,18 +114,20 @@ class LSTM(nn.Module):
         HITS /= total_test_num
         print('Test MRR = {}\tTest Recall@10 = {}\n'.format(MRR,HITS))
 
-        rbos,jaccards = [],[]
-        avg_rbo,avg_jaccard = -1,-1
+        rbos,jaccards,frbos = [],[],[]
+        avg_rbo,avg_jaccard,avg_frbo = -1,-1,-1
         if original_probs!=-1:
-            rank1,rank2 = np.argsort(-np.array(original_probs),axis=1),np.argsort(-np.array(probs),axis=1)
+            rank1,rank2 = np.argsort(-np.array(original_probs),axis=1,kind='stable'),np.argsort(-np.array(probs),axis=1,kind='stable')
             for i in range(total_test_num):
                 ground_truth = test[i][1]
+                #rbo() defaults to p=1.0 (average overlap over the full list); this is what the paper's numbers use (random shuffles score ~0.5)
                 RBO = rbo.RankingSimilarity(rank1[i,:], rank2[i,:]).rbo()
                 jaccard = np.intersect1d(rank1[i,:10],rank2[i,:10]).shape[0]/np.union1d(rank1[i,:10],rank2[i,:10]).shape[0]
                 rbos.append(RBO)
                 jaccards.append(jaccard)
-            avg_rbo,avg_jaccard = np.average(rbos),np.average(jaccards)
-            print('RLS metrics: (RBO,Jaccard@10) = {},{}\n'.format(avg_rbo,avg_jaccard))
+                frbos.append(frbo(rank1[i,:10].tolist(),rank2[i,:10].tolist()))
+            avg_rbo,avg_jaccard,avg_frbo = np.average(rbos),np.average(jaccards),np.average(frbos)
+            print('RLS metrics: (RBO,Jaccard@10,FRBO@10) = {},{},{}\n'.format(avg_rbo,avg_jaccard,avg_frbo))
 
-        return [probs,[avg_rbo,avg_jaccard],[MRR,HITS]]
+        return [probs,[avg_rbo,avg_jaccard,avg_frbo],[MRR,HITS]]
 

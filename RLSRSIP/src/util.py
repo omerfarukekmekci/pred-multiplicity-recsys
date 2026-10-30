@@ -5,25 +5,39 @@
 #This software is free of charge under research purposes.
 #For commercial purposes, please contact the main author.
 import numpy as np
+import random
+import torch
 
-def data_cleaning(raw_data,test_data_ratio):
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    #Make cuDNN/cuBLAS pick deterministic kernels so that two runs on identical data give identical models
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True)
+
+def frbo(list1, list2, k=10, p=0.9):
+    #Finite Rank-Biased Overlap@k (Betello et al., ECIR 2024): RBO truncated at depth k and divided by its maximum (1-p^k), so identical lists score 1
+    score = sum(p**(d-1)*len(set(list1[:d])&set(list2[:d]))/d for d in range(1,k+1))
+    return (1-p)*score/(1-p**k)
+
+def data_cleaning(raw_data,test_data_ratio,min_interactions=10):
+    #Remove users with fewer than min_interactions interactions (Section 3.1); the original code computed this filter but never applied it
+    (users,counts) = np.unique(raw_data[:,0],return_counts = True)
+    raw_data = raw_data[np.isin(raw_data[:,0],users[counts>=min_interactions])]
+
+    #Map users and items to contiguous indices after filtering, since item indices are used as model output positions
     unique_users = sorted(list(set(raw_data[:, 0])))
     unique_items = sorted(list(set(raw_data[:, 1])))
     user_dic = {user:idx for (idx,user) in enumerate(unique_users)}
     item_dic = {item:idx for (idx,item) in enumerate(unique_items)}
-    for (idx, row) in enumerate(raw_data):
-        user,item,time = user_dic[row[0]],item_dic[row[1]],row[2]
-        raw_data[idx,0],raw_data[idx,1] = int(user),int(item)
- 
-    (users,counts) = np.unique(raw_data[:,0],return_counts = True)
-    
-    users = users[counts>=10]
 
-    sequence_dic =  {int(user):[] for user in set(raw_data[:,0])}
+    sequence_dic =  {idx:[] for idx in range(len(unique_users))}
     new_data = []
-    for i in range(raw_data.shape[0]):
-        if int(raw_data[i,0]) in user_dic:
-            new_data.append([int(raw_data[i,0]),int(raw_data[i,1]),raw_data[i,2],0])
+    for row in raw_data:
+        new_data.append([user_dic[row[0]],item_dic[row[1]],row[2],0])
 
     new_data = np.array(new_data)
 

@@ -15,45 +15,7 @@ import os
 from util import *
 from lstm import *
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path',type=str,default='data/wikipedia.tsv',help='path of the dataset (it should be tsv format; see data/wikipedia.tsv')
-    parser.add_argument('--num_perturbation', default=1, type = int, help='Number of input perturbations interactions')
-    parser.add_argument('--gpu',default='0',type=str,help='GPU number that will be used')
-    parser.add_argument('--output',type=str, help = "path of the model stability result")
-    parser.add_argument('--epochs', default=50, type = int, help='number of training epochs')
-    parser.add_argument('--max_seq_len', default=50, type = int, help='maximum sequence length for CASPER perturbation')
-    parser.add_argument('--test_data_ratio', default=0.1, type = float, help='last K% of interactions of each user will be used as test data')
-    parser.add_argument('--batch_size', default=1024, type = int, help='mini-batch size for training')
-    parser.add_argument('--learning_rate', default=0.001, type = float, help='learning rate for training')
-
-    args = parser.parse_args()
-    os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
-
-    output_path = args.output
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(device)
-    
-    #Reading & cleaning the dataset
-    raw_data = pd.read_csv(args.data_path, sep='\t', header=None).values[:,1:]
-    look_back = args.max_seq_len
-    processed_data = data_cleaning(raw_data, args.test_data_ratio)
-
-    f = open(output_path,'w')
-
-    #Define LSTM model and train it with the original training data
-    (train,test) = train_test_generator(processed_data,look_back)
-    model = LSTM(data = processed_data,input_size=128, output_size=len(np.unique(processed_data[:,1]))+1, hidden_dim=64, n_layers=1, device=device,args=args).to(device)
-    model.LSTM.flatten_parameters()
-    print(model)
-    original_model = copy.deepcopy(model)
-
-    #traintest function performs model training and return only next-item metrics (RLS cannot be obtained here)
-    [original_probs,temp,[MRR,Recall]] = model.traintest(train=train,test=test,epochs = args.epochs, original_probs=-1)
-    print('[Without perturbation] Avg MRR = {}\tAvg Recall@10 = {}\n'.format(MRR,Recall),file=f,flush=True)
-    print('Original model training is done. Finding perturbations now.\n')
-    
+def casper_perturbation(processed_data, look_back, num_perturbation):
     #Creating IDAG
     user_seq,item_seq = defaultdict(list),defaultdict(list)
     in_degree, num_child = np.zeros(processed_data.shape[0]),np.zeros(processed_data.shape[0])
@@ -67,7 +29,7 @@ def main():
             user_seq[user].append(i)
             item_seq[item].append(i)
             in_degree[i] = 0
-    
+
     for user in user_seq.keys():
         cur_list = user_seq[user]
         st_idx = len(cur_list)-look_back+1
@@ -87,7 +49,7 @@ def main():
             j,k = cur_list[i],cur_list[i+1]
             in_degree[k] += 1
             edges[j].append(k)
-    
+
     queue = []
     for i in range(processed_data.shape[0]):
         if in_degree[i]==0 and processed_data[i,3]==0:
@@ -111,26 +73,97 @@ def main():
         num_child[root] = num_desc
 
     #Interactions found by CASPER perturbation
-    chosen = np.argsort(num_child)[-args.num_perturbation:]
-    
-    del_indices = []
-    for idx in chosen:
-        maxv,maxp = num_child[idx],idx
-        user,item,time = int(processed_data[maxp,0]),int(processed_data[maxp,1]),processed_data[maxp,2]
-        del_indices.append(maxp)
-        print('[CASPER,Deletion] interaction {}=({},{},{}) is deleted\n'.format(maxp,user,item,time),file=f,flush=True)
+    return list(np.argsort(num_child)[-num_perturbation:])
 
-    #Delete interactions found by CASPER
+def random_perturbation(processed_data, mode, num_perturbation, rng):
+    #Baselines of Section 7.1.2: a random training interaction, or the first/last training interaction of a random user
+    train_indices = np.where(processed_data[:,3]==0)[0]
+    if mode=='random':
+        return list(rng.choice(train_indices,num_perturbation,replace=False))
+    first,last = {},{}
+    for i in train_indices:
+        user = int(processed_data[i,0])
+        first.setdefault(user,i)
+        last[user] = i
+    candidates = first if mode=='earliest' else last
+    users = rng.choice(sorted(candidates.keys()),num_perturbation,replace=False)
+    return [candidates[user] for user in users]
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--data_path',type=str,default='data/wikipedia.tsv',help='path of the dataset (it should be tsv format; see data/wikipedia.tsv')
+    parser.add_argument('--num_perturbation', default=1, type = int, help='Number of input perturbations interactions')
+    parser.add_argument('--perturbation', default='casper', choices=['casper','random','earliest','latest','none'], help='how to choose the deleted interactions; none retrains on the unperturbed data (null check, RLS should be 1)')
+    parser.add_argument('--seed', default=0, type = int, help='random seed for model initialization and random perturbations')
+    parser.add_argument('--min_interactions', default=10, type = int, help='remove users with fewer interactions (0 reproduces the original code, which never applied the filter)')
+    parser.add_argument('--save_dir', default=None, type=str, help='if set, rank lists of both models are saved here as .npy files')
+    parser.add_argument('--gpu',default='0',type=str,help='GPU number that will be used')
+    parser.add_argument('--output',type=str, help = "path of the model stability result")
+    parser.add_argument('--epochs', default=50, type = int, help='number of training epochs')
+    parser.add_argument('--max_seq_len', default=50, type = int, help='maximum sequence length for CASPER perturbation')
+    parser.add_argument('--test_data_ratio', default=0.1, type = float, help='last K% of interactions of each user will be used as test data')
+    parser.add_argument('--batch_size', default=1024, type = int, help='mini-batch size for training')
+    parser.add_argument('--learning_rate', default=0.001, type = float, help='learning rate for training')
+
+    args = parser.parse_args()
+    os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
+    #Required by cuBLAS for deterministic results; must be set before CUDA is initialized
+    os.environ["CUBLAS_WORKSPACE_CONFIG"]=":4096:8"
+    set_seed(args.seed)
+
+    output_path = args.output
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(device)
+
+    #Reading & cleaning the dataset
+    raw_data = pd.read_csv(args.data_path, sep='\t', header=None).values[:,1:]
+    look_back = args.max_seq_len
+    processed_data = data_cleaning(raw_data, args.test_data_ratio, args.min_interactions)
+
+    f = open(output_path,'w')
+    print('[Setup] {}\n'.format(vars(args)),file=f,flush=True)
+    print('[Data] users = {}\titems = {}\tinteractions = {}\n'.format(len(np.unique(processed_data[:,0])),len(np.unique(processed_data[:,1])),processed_data.shape[0]),file=f,flush=True)
+
+    #Define LSTM model and train it with the original training data
+    (train,test) = train_test_generator(processed_data,look_back)
+    model = LSTM(data = processed_data,input_size=128, output_size=len(np.unique(processed_data[:,1]))+1, hidden_dim=64, n_layers=1, device=device,args=args).to(device)
+    model.LSTM.flatten_parameters()
+    print(model)
+    original_model = copy.deepcopy(model)
+
+    #traintest function performs model training and return only next-item metrics (RLS cannot be obtained here)
+    [original_probs,temp,[MRR,Recall]] = model.traintest(train=train,test=test,epochs = args.epochs, original_probs=-1)
+    print('[Without perturbation] Avg MRR = {}\tAvg Recall@10 = {}\n'.format(MRR,Recall),file=f,flush=True)
+    print('Original model training is done. Finding perturbations now.\n')
+
+    if args.perturbation=='casper':
+        del_indices = casper_perturbation(processed_data, look_back, args.num_perturbation)
+    elif args.perturbation=='none':
+        del_indices = []
+    else:
+        del_indices = random_perturbation(processed_data, args.perturbation, args.num_perturbation, np.random.default_rng(args.seed))
+
+    for idx in del_indices:
+        user,item,time = int(processed_data[idx,0]),int(processed_data[idx,1]),processed_data[idx,2]
+        print('[{},Deletion] interaction {}=({},{},{}) is deleted\n'.format(args.perturbation,idx,user,item,time),file=f,flush=True)
+
+    #Delete the chosen interactions
     new_data = np.delete(processed_data,del_indices,0)
 
     print('Perturbations are done. Retraining the model and calculate RLS and next-item metrics.\n')
- 
+
     (train,test) = train_test_generator(new_data,look_back)
     model = copy.deepcopy(original_model)
     model.LSTM.flatten_parameters()
-    [current_probs,[RBO,Jaccard],[MRR,Recall]] = model.traintest(train=train,test=test,epochs = args.epochs, original_probs=original_probs)
-    print('[With CASPER perturbation] Avg MRR = {}\tAvg Recall@10 = {}\n'.format(MRR,Recall),file=f,flush=True)
-    print('\nRanklist Sensitivity Metrics (RBO, Jaccard@10) = {},{}\n'.format(RBO,Jaccard),file = f,flush=True)       
+    [current_probs,[RBO,Jaccard,FRBO],[MRR,Recall]] = model.traintest(train=train,test=test,epochs = args.epochs, original_probs=original_probs)
+    print('[With {} perturbation] Avg MRR = {}\tAvg Recall@10 = {}\n'.format(args.perturbation,MRR,Recall),file=f,flush=True)
+    print('\nRanklist Sensitivity Metrics (RBO, Jaccard@10, FRBO@10) = {},{},{}\n'.format(RBO,Jaccard,FRBO),file = f,flush=True)
+
+    if args.save_dir is not None:
+        os.makedirs(args.save_dir,exist_ok=True)
+        np.save(os.path.join(args.save_dir,'ranks_original.npy'),np.argsort(-np.array(original_probs),axis=1,kind='stable').astype(np.int16))
+        np.save(os.path.join(args.save_dir,'ranks_perturbed.npy'),np.argsort(-np.array(current_probs),axis=1,kind='stable').astype(np.int16))
 
 if __name__ == "__main__":
     main()

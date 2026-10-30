@@ -1,0 +1,13 @@
+[Setup] {'data_path': 'data/wikipedia.tsv', 'num_perturbation': 1, 'perturbation': 'casper', 'seed': 0, 'min_interactions': 10, 'save_dir': None, 'gpu': '0', 'output': 'wikipedia_stability', 'epochs': 50, 'max_seq_len': 50, 'test_data_ratio': 0.1, 'batch_size': 1024, 'learning_rate': 0.001}
+
+[Data] users = 1914	items = 1000	interactions = 142142
+
+[Without perturbation] Avg MRR = 0.8245541566401179	Avg Recall@10 = 0.9009002306376014
+
+[casper,Deletion] interaction 5083=(544,439,143668.0) is deleted
+
+[With casper perturbation] Avg MRR = 0.8248166567020283	Avg Recall@10 = 0.8988170523026561
+
+
+Ranklist Sensitivity Metrics (RBO, Jaccard@10, FRBO@10) = 0.7789852036731829,0.3521807192098383,0.6271595494902265
+

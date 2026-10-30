@@ -1,0 +1,13 @@
+[Setup] {'data_path': 'data/wikipedia.tsv', 'num_perturbation': 1, 'perturbation': 'random', 'seed': 0, 'min_interactions': 10, 'save_dir': None, 'gpu': '0', 'output': 'results/wiki_random_s0', 'epochs': 50, 'max_seq_len': 50, 'test_data_ratio': 0.1, 'batch_size': 1024, 'learning_rate': 0.001}
+
+[Data] users = 1914	items = 1000	interactions = 142142
+
+[Without perturbation] Avg MRR = 0.8245541566401179	Avg Recall@10 = 0.9009002306376014
+
+[random,Deletion] interaction 113016=(482,302,2075282.0) is deleted
+
+[With random perturbation] Avg MRR = 0.8259141242001398	Avg Recall@10 = 0.9014210252213377
+
+
+Ranklist Sensitivity Metrics (RBO, Jaccard@10, FRBO@10) = 0.7810572142613447,0.3542644631759472,0.6264221871882153
+

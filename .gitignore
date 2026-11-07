@@ -1,0 +1,6 @@
+TODO.txt
+data/
+*/runs/
+log/
+log_tensorboard/
+__pycache__/

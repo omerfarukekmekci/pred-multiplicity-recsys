@@ -1,0 +1,9 @@
+# Environment for everything outside RLSRSIP/ (conda env "pmrs", Python 3.10).
+# torch is the CUDA 12.8 build: pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+torch==2.11.0
+recbole==1.2.1
+scipy==1.12.0  # RecBole's LightGCN uses dok_matrix._update, removed in scipy 1.13
+numpy==1.26.4
+pandas==2.3.3
+PyYAML==6.0.3
+rbo==0.1.2

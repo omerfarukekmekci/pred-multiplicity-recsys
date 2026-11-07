@@ -1,0 +1,6 @@
+# Sequential models read each target item together with the user's preceding items.
+MAX_ITEM_LIST_LENGTH: 50
+alias_of_item_id: [item_id_list]   # share one id vocabulary between the list and the target
+load_col:
+  inter: [user_id, item_id_list, item_id, timestamp]
+train_neg_sample_args: ~           # cross-entropy over all items, no sampled negatives

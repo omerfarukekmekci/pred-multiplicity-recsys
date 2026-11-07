@@ -1,0 +1,31 @@
+# Settings shared by every RecBole-trained family. Overridden by
+# <family>/configs/family.yaml, then <family>/configs/<Model>.yaml.
+
+USER_ID_FIELD: user_id
+ITEM_ID_FIELD: item_id
+TIME_FIELD: timestamp
+benchmark_filename: [train, valid, test]   # the frozen split from common/prepare_data.py
+
+# Training
+epochs: 300
+stopping_step: 10
+train_batch_size: 2048
+learning_rate: 0.001
+reproducibility: True           # RecBole: fixed seeds, deterministic cuDNN
+deterministic_algorithms: True  # torch.use_deterministic_algorithms on top of that
+
+# Validation inside RecBole, used only to pick the best epoch
+eval_args:
+  mode: full
+  order: TO
+eval_step: 1
+eval_batch_size: 4096
+metrics: [Recall, NDCG, MRR]
+topk: [10]
+valid_metric: NDCG@10
+
+# Export (common/recbole_runner.py)
+export_topk: 100        # length of the saved rank list per user
+export_ks: [5, 10, 20]  # cutoffs for the per-user hit/NDCG columns
+
+show_progress: False

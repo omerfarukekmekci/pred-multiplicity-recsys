@@ -1,0 +1,3 @@
+# Matrix factorisation with BPR loss (Rendle et al., 2009): the non-graph sanity
+# check for LightGCN, which reduces to it with zero propagation layers.
+embedding_size: 64

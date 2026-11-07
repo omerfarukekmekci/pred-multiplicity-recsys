@@ -1,0 +1,9 @@
+# Graph/collaborative-filtering models read plain (user, item) interactions and
+# train with BPR loss on one uniformly sampled negative per positive.
+load_col:
+  inter: [user_id, item_id, timestamp]
+train_neg_sample_args:
+  distribution: uniform
+  sample_num: 1
+# RecBole scores eval_batch_size // n_items users per batch, so this must be large.
+eval_batch_size: 1048576

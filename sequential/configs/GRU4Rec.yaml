@@ -1,0 +1,6 @@
+# RecBole defaults for GRU4Rec (Hidasi et al., 2016).
+loss_type: CE
+embedding_size: 64
+hidden_size: 128
+num_layers: 1
+dropout_prob: 0.3

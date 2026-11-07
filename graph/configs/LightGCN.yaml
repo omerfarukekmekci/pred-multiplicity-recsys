@@ -1,0 +1,4 @@
+# RecBole defaults for LightGCN (He et al., 2020).
+embedding_size: 64
+n_layers: 2
+reg_weight: 1.0e-05
